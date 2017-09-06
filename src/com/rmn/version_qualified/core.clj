@@ -1,4 +1,4 @@
-(ns com.retailmenot.version-qualified.core
+(ns com.rmn.version-qualified.core
   "Defines functionality for annotating data structures with version qualifiers
 
    The way this is accomplished is with the version-qualified macro. It

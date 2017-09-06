@@ -1,9 +1,11 @@
-(ns com.retailmenot.version-qualified.qualifiers.linear
-  (:require [com.retailmenot.version-qualified.core :as v]))
+(ns com.rmn.version-qualified.qualifiers.linear
+  (:require [com.rmn.version-qualified.core :as v]))
+
 
 
 ;; This var must be bound when version-qualified is called in order for these qualifiers to work
 (declare ^:dynamic *known-versions*)
+
 
 ;; Version Qualifier - "Was added in version X"
 ;; Takes a single version (in *known-versions*) and an arbitrary code form. The form
@@ -17,6 +19,7 @@
     forms
     (list ::v/delete)))
 
+
 ;; Version Qualifier - "Was removed in version X"
 ;; Takes a single version (in *known-versions*) and an arbitrary code form. The form
 ;; will only be included if v/*version* is bound to any version that comes before
@@ -28,6 +31,7 @@
          (.indexOf *known-versions* removed-version))
     forms
     (list ::v/delete)))
+
 
 ;; Version Qualifier - "Changed to this in this version onwards"
 ;; Takes a starting form, and then a variable list of version and new-form
@@ -53,6 +57,7 @@
                 *known-versions*)
         (list))))
 
+
 ;; Version Qualifier - "Only valid for these versions"
 ;; Takes a set of versions (in *known-versions*) and an arbitrary code form. The form
 ;; will only be included if v/*version* is bound to one of the versions in
@@ -62,6 +67,7 @@
   (if (contains? version-set v/*version*)
     forms
     (list ::v/delete)))
+
 
 ;; Version Qualifier - "Do these things for these specific versions"
 ;; Takes a map of versions (in *known-versions*) to arbitrary code forms. Allows the

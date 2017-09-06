@@ -1,5 +1,6 @@
-(ns com.retailmenot.version-qualified.qualifiers.feature
-  (:require [com.retailmenot.version-qualified.core :as v]))
+(ns com.rmn.version-qualified.qualifiers.feature
+  (:require [com.rmn.version-qualified.core :as v]))
+
 
 
 ;; Bound by the user. This is a map from a version (which v/*version*) may be

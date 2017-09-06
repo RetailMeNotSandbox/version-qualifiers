@@ -1,6 +1,6 @@
-(ns com.retailmenot.version-qualified.core-test
+(ns com.rmn.version-qualified.core-test
   (:require [clojure.test :refer :all]
-            [com.retailmenot.version-qualified.core :as v]))
+            [com.rmn.version-qualified.core :as v]))
 
 
 ;; (deftest odds-and-ends
