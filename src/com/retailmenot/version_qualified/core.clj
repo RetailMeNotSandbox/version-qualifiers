@@ -21,110 +21,20 @@
 
 
 
-(def ^:dynamic *versions*
-  "Specifies the order and values of known versions. Bound during compile-time
-   only")
-
 (def ^:dynamic *version*
-  "Specifies the \"current\" version. Bound during compile-time only")
+  "Specifies the \"current\" version. Bound during compile-time only"
+  nil)
 
-
-;;;; Version Qualifiers ;;;;
-;;
-;; Version qualifiers are functions, but they behave like macros in the sense
-;; that their inputs and outputs are unevaluated code. They are used by the
-;; version-qualified macro to transform user code.
-;;
-;; Version qualifiers take version-qualification information and user-code as
-;; input, and produce user-code as output depending on what *version* is bound
-;; to
-;;
-;; for example, given:
-;;
-;; (defn version-dependent-function
-;;   [a b]
-;;   (v/version-qualified *version-var* [:V0, :V1, :V2]
-;;     {:value (v/switch {:V0 (+ a b)
-;;                        :V1 (* a b)
-;;                        :V2 ::v/delete})}))
-;;
-;; version-qualified will generate 3 separate pieces of code:
-;; If *version* is bound to :V0, it will generate {:value (+ a b)}
-;; :V1 will be {:value (* a b)}
-;; :V2 will be {}
-;;
-;; When the user then binds *version-var* at run-time, and invokes this
-;; function, only the specified piece of code will be executed.
-
-(defn switch
-  "Version Qualifier - \"Do these things for these specific versions\"
-   Takes a map of versions (in *versions*) to arbitrary code forms. Allows the
-   user to customize functionality on a version-to-version basis"
-  [version-form-map]
-  {:pre [(= (set (keys version-form-map)) (set *versions*))]}
-  (-> (get version-form-map *version*)
-      (list)))
-
-(defn changed
-  "Version Qualifier - \"Changed to this in this version onwards\"
-   Takes a starting form, and then a variable list of version and new-form
-   pairs. Think of this like a change-log:
-   (changed (+ 1 2)
-            :V2 (- 53 10)
-            :V6 (something else))
-   From version 0 to 1 it is (+ 1 2), from 2 to 5 it is (- 53 10),
-   and from 6 on it is (something else). The versions must be listed in order"
-  [first-form & version-form-pairs]
-  {:pre [(even? (count version-form-pairs)),
-         (every? #(contains? (set *versions*) %) (take-nth 2 version-form-pairs))]}
-  (let [change-log (->> version-form-pairs
-                        (partition 2)
-                        (into {} (map vec)))]
-    (-> (reduce (fn [last-form version]
-                  (let [next-form (get change-log version last-form)]
-                    (if (= version *version*)
-                      (reduced next-form)
-                      next-form)))
-                first-form
-                *versions*)
-        (list))))
-
-(defn only
-  "Version Qualifier - \"Only valid for these versions\"
-   Takes a set of versions (in *versions*) and an arbitrary code form. The form
-   will only be included if *version* is bound to one of the versions in
-   version-set"
-  [version-set & forms]
-  (if (contains? version-set *version*)
-    forms
-    (list ::delete)))
-
-(defn added
-  "Version Qualifier - \"Was added in version X\"
-   Takes a single version (in *versions*) and an arbitrary code form. The form
-   will only be included if *version* is bound to the version supplied, or any
-   version that comes after it"
-  [version & forms]
-  {:pre [(not (neg? (.indexOf *versions* version)))]}
-  (if (>= (.indexOf *versions* *version*)
-          (.indexOf *versions* version))
-    forms
-    (list ::delete)))
-
-(defn removed
-  "Version Qualifier - \"Was removed in version X\"
-   Takes a single version (in *versions*) and an arbitrary code form. The form
-   will only be included if *version* is bound to any version that comes before
-   the version supplied"
-  [version & forms]
-  {:pre [(not (neg? (.indexOf *versions* version)))]}
-  (if (< (.indexOf *versions* *version*)
-         (.indexOf *versions* version))
-    forms
-    (list ::delete)))
-
+(defmulti eval-qualifier (fn [first-arg & _] first-arg))
 
 ;;;; version-qualified ;;;;
+
+(defn qualifier?
+  "Returns true if the given form is a version-qualifier"
+  [form]
+  (and
+   (list? form)
+   (contains? (methods eval-qualifier) (first form))))
 
 (defn apply-version
   "Walks an arbitrary data-structure (such as code) and transforms it using the
@@ -132,8 +42,9 @@
    replace the input form with. The visitor may return ::delete, in which case
    this function will entirely remove that expression from a map, a vector, or
    a list (or collection). Returns the modified data-structure"
-  [process-form data]
+  [process-form* data version]
   (let [delete? (partial = ::delete)
+        process-form (partial process-form* version)
         process-kv-form
          (fn [key-or-val]
            (let [new-key-or-val (process-form key-or-val)]
@@ -149,6 +60,25 @@
     (prewalk
       (fn [form]
         (cond
+          (qualifier? form)
+            (let [nforms (process-form form)]
+              ;; All qualifiers *should* be processed by the time we walk them,
+              ;; except for if there is a qualifier wrapping the entire body --
+              ;; i.e. the (= form data)
+              (assert (= form data), "all qualifiers should've been processed by the time we walk them")
+              (assert (= 1 (count nforms))
+                      (format
+                        (str "Version qualified expression '%s returns multiple"
+                             " forms: '%s, for version '%s, but is also the"
+                             " outermost expression")
+                        form nforms version))
+              (assert (not (delete? (first nforms)))
+                      (format
+                        (str "Version qualified expression '%s is removed in"
+                             " version '%s, but it is also the outermost"
+                             " expression")
+                        form, version))
+              (first nforms))
           (map? form)
             (->> (map (partial mapv process-kv-form) form)
                  (remove (partial some delete?))
@@ -159,18 +89,10 @@
                  (into []))
           (coll? form)
             (->> (mapcat process-form form)
-                 (remove delete?))
+                 (remove delete?)
+                 (apply list))
           :else form))
       data)))
-
-(defn qualifier?
-  "Returns true if the given form is a version-qualifier"
-  [form]
-  (and (list? form)
-       (> (count form) 0)
-       (symbol? (first form))
-       (= (find-ns 'com.retailmenot.version-qualifiers.core)
-          (-> (first form) resolve meta :ns))))
 
 (defn process-form-for-version
   "Takes a version and (maybe) a version-qualified expression and returns the
@@ -178,9 +100,8 @@
   [version form]
   (if (qualifier? form)
     (binding [*version* version]
-      (apply (resolve (first form)) (rest form)))
+      (apply eval-qualifier form))
     (list form)))
-
 
 (defn version-qualified-error
   [version-symbol version-value versions]
@@ -200,7 +121,7 @@
     ;;
     ;; If you're seeing this while testing, you're probably trying to call some
     ;; version-sensitive code without having done this, or you are calling it
-    ;; with a version that wasn't specified as an argument to the macro
+    ;; with a version that wasn't specified as an argument to version-qualified
     (ex-info
       (if version-value
         (format
@@ -212,24 +133,32 @@
           (str "attempted to call version-qualified code"
                " but '%s was not bound!")
           version-symbol))
-      {(keyword version-symbol) version-value
-       :*versions* versions})))
+      {(keyword version-symbol) version-value})))
 
-(defmacro version-qualified
-  "Macro for easily writing version-dependent code. Takes a symbol, which must
-   be bound at runtime to the \"current\" version, an ordered list of versions
-   which the symbol may be bound to, and an arbitrary code block. The result is
-   a case expression that will only will invoke the version of code specified
-   by the binding of the version-symbol"
+(defn process-qualifiers
+  "Takes a list of supported versions, a body and a version. Binds the supported
+  versions and returns user specific code for that version.
+  WARNING: Must be called from same namespace as where body is defined
+  or body must use qualifiers which are fully namespace-qualified"
+  [body version]
+  (apply-version process-form-for-version body version))
+
+(defn version-qualified
+  "Meants to be used inside of user-defined macros. Transforms code that
+   contains version qualifiers into a case expression which switches on the
+   supplied symbol. Takes a symbol, which must be bound at runtime to the
+   \"current\" version, a collection of versions which that symbol may be bound
+   to, and an arbitrary code block which contains version qualifiers. The
+   result is a case expression that will only invoke the version of code
+   specified by the binding of the version-symbol."
   [version-symbol versions-literal body]
-  (binding [*versions* versions-literal]
-    (let [process-qualifiers #(apply-version (partial process-form-for-version %) body)
-          version-code-pairs (->> (group-by process-qualifiers versions-literal)
-                                  (mapcat (fn [[processed-code versions]]
-                                            [(apply list versions), processed-code])))]
-      (if (= 2 (count version-code-pairs))
-        (let [[vers, code] version-code-pairs]
-          code)
-        `(case ~version-symbol
-           ~@version-code-pairs
-           (version-qualified-error ~(name version-symbol) ~version-symbol ~versions-literal))))))
+  (let [process-qualifiers (partial process-qualifiers body)
+        version-code-pairs (->> (group-by process-qualifiers versions-literal)
+                                (mapcat (fn [[processed-code versions]]
+                                          [(apply list versions), processed-code])))]
+    (if (= 2 (count version-code-pairs))
+      (let [[vers, code] version-code-pairs]
+        code)
+      `(case ~version-symbol
+         ~@version-code-pairs
+         (version-qualified-error ~(name version-symbol) ~version-symbol ~versions-literal)))))
