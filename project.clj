@@ -1,4 +1,4 @@
-(defproject com.rmn/version-qualified "1.0.0-SNAPSHOT"
+(defproject com.rmn/version-qualified "1.0.0"
   :description "A library for generating version-specific code"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
