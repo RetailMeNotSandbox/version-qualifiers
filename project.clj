@@ -8,6 +8,8 @@
                    :snapshots false}]]
   :deploy-repositories [["releases" {:url "http://pkg.rmn.io/content/repositories/releases"
                                      :sign-releases false}]]
+  :profiles {:dev {:dependencies [[org.clojure/test.check "0.9.0"]
+                                  [com.gfredericks/test.chuck "0.2.8"]]}}
   :release-tasks [["vcs" "assert-committed"]
                   ["test"]
                   ["change" "version" "leiningen.release/bump-version" "release"]

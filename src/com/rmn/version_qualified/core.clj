@@ -22,26 +22,33 @@
 
 
 (def ^:dynamic *version*
-  "Specifies the \"current\" version. Bound during compile-time only"
+  "Specifies the \"current\" version that the verison-qualified function is
+   processing. Non-trivial methods for eval-qualifier likely must use this."
   nil)
 
-(defmulti eval-qualifier (fn [first-arg & _] first-arg))
+(defmulti eval-qualifier
+  "Takes a version-qualified expression (of any number of arguments) and
+   returns an unqualified expression that is appropriate for the version
+   currently bound to *version*.  Dispatches based off the first value in the
+   expression. To define new version-qualifiers, new methods must be added to
+   this multimethod"
+  (fn [first-arg & _] first-arg))
+
 
 ;;;; version-qualified ;;;;
 
 (defn qualifier?
   "Returns true if the given form is a version-qualifier"
   [form]
-  (and
-   (list? form)
-   (contains? (methods eval-qualifier) (first form))))
+  (and (list? form)
+       (contains? (methods eval-qualifier) (first form))))
 
 (defn apply-version
   "Walks an arbitrary data-structure (such as code) and transforms it using the
    process-form visitor function. The visitor must return a list of forms to
-   replace the input form with. The visitor may return ::delete, in which case
-   this function will entirely remove that expression from a map, a vector, or
-   a list (or collection). Returns the modified data-structure"
+   replace the input form with. The visitor may return '(::delete), in which
+   case this function will entirely remove that expression from a map, a
+   vector, or a list (or collection). Returns the modified data-structure"
   [process-form* data version]
   (let [delete? (partial = ::delete)
         process-form (partial process-form* version)
@@ -64,7 +71,7 @@
             (let [nforms (process-form form)]
               ;; All qualifiers *should* be processed by the time we walk them,
               ;; except for if there is a qualifier wrapping the entire body --
-              ;; i.e. the (= form data)
+              ;; i.e. (= form data)
               (assert (= form data), "all qualifiers should've been processed by the time we walk them")
               (assert (= 1 (count nforms))
                       (format
@@ -103,25 +110,15 @@
       (apply eval-qualifier form))
     (list form)))
 
+(defn process-qualifiers
+  "Takes a list of supported versions, a body and a version. Binds the supported
+  versions and returns user specific code for that version."
+  [body version]
+  (apply-version process-form-for-version body version))
+
 (defn version-qualified-error
   [version-symbol version-value versions]
   (throw
-    ;; Note to Bug Hunters:
-    ;;  The user must bind their version dynamic var when calling code defined
-    ;;  inside of the version-qualified macro
-    ;;  This is accomplished like so:
-    ;;
-    ;;  (binding [*app-version* ...]
-    ;;    (call-to-version-qualified-code))
-    ;;
-    ;; or, more obviously
-    ;;  (binding [*app-version* :V1]
-    ;;    (version-qualified *app-version* [... :V1 ...]
-    ;;      ...))
-    ;;
-    ;; If you're seeing this while testing, you're probably trying to call some
-    ;; version-sensitive code without having done this, or you are calling it
-    ;; with a version that wasn't specified as an argument to version-qualified
     (ex-info
       (if version-value
         (format
@@ -135,16 +132,8 @@
           version-symbol))
       {(keyword version-symbol) version-value})))
 
-(defn process-qualifiers
-  "Takes a list of supported versions, a body and a version. Binds the supported
-  versions and returns user specific code for that version.
-  WARNING: Must be called from same namespace as where body is defined
-  or body must use qualifiers which are fully namespace-qualified"
-  [body version]
-  (apply-version process-form-for-version body version))
-
 (defn version-qualified
-  "Meants to be used inside of user-defined macros. Transforms code that
+  "Meant to be used inside of user-defined macros. Transforms code that
    contains version qualifiers into a case expression which switches on the
    supplied symbol. Takes a symbol, which must be bound at runtime to the
    \"current\" version, a collection of versions which that symbol may be bound
@@ -161,4 +150,9 @@
         code)
       `(case ~version-symbol
          ~@version-code-pairs
-         (version-qualified-error ~(name version-symbol) ~version-symbol ~versions-literal)))))
+         (version-qualified-error
+           ~(name version-symbol)
+           ~version-symbol
+           ;;  Unpacking versions-literal (below) prevents accidentally calling
+           ;;  versions-literal like a function
+           [~@versions-literal])))))
