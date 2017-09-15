@@ -4,7 +4,7 @@
 
 
 ;; This var must be bound when version-qualified is called in order for these qualifiers to work
-(declare ^:dynamic *known-versions*)
+(declare ^:dynamic ^java.util.List *known-versions*)
 
 
 ;; Version Qualifier - "Was added in version X"
