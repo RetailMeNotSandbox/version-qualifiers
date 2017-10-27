@@ -2,6 +2,8 @@
 
 ## Overview
 
+[![Build Status](https://travis-ci.org/RetailMeNotSandbox/version-qualifiers.svg?branch=master)](https://travis-ci.org/RetailMeNotSandbox/version-qualifiers)
+
 version-qualified is a library which expands code annotated with version
 "qualifiers" into separate code paths which can be switched at runtime.
 
