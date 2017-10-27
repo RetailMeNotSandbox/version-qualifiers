@@ -11,7 +11,7 @@ copy-pasta / boilerplate.
 
 ## Installation
 
-[![Clojars Project](...svg)](...)
+[![Clojars Project](https://img.shields.io/clojars/v/com.rmn/version-qualified.svg)](https://clojars.org/com.rmn/version-qualified)
 
 ## Quickstart
 
