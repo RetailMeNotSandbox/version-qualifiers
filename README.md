@@ -11,6 +11,9 @@ The purpose is let developers enhance their source code but while maintaining
 backwards compatibility. It attempts to do so while drastically reducing
 copy-pasta / boilerplate.
 
+For a more thorough discussion about this library, you can enjoy this blog post
+on [Minimally Invasive API Versioning](https://medium.com/retailmenot-engineering/minimally-invasive-api-versioning-de5d85ea96d7)
+
 ## Installation
 
 [![Clojars Project](https://img.shields.io/clojars/v/com.rmn/version-qualified.svg)](https://clojars.org/com.rmn/version-qualified)
@@ -226,6 +229,9 @@ possible app version. Often times this can be the same var you pass to
 
 Feature qualifiers allow you decouple your changes from your app versions, and
 instead organize your code according to features.
+
+An in-depth discussion on the rationale for these qualifiers can be found in
+this blog post about [Feature-Oriented APIs](https://medium.com/retailmenot-engineering/feature-oriented-apis-f0010d140d3a)
 
 To enable them, you must require their namespace, and bind a dynamic var in
 your macro. The dynamic variable `version->feature`is a mapping of version in
