@@ -8,51 +8,50 @@
   [& _]
   '(::v/delete))
 
-(defmethod v/eval-qualifier 'test-include
-  [_ & body]
-  body)
-
 (defmethod v/eval-qualifier 'test-only
   [_ version & body]
   (if (= version v/*version*)
     body
     '(::v/delete)))
 
+(defmethod v/eval-qualifier 'test-after
+  [_ version & body]
+  (if (> v/*version* version)
+    body
+    '(::v/delete)))
 
-(deftest version-qualified-examples
-  (is (= `(case ~'*the-version*
-            (:V0) ~'(+ 0)
-            (:V1) ~'(+ 0 1)
-            (:V2) ~'(+ 0 2)
-            (v/version-qualified-error "*the-version*" ~'*the-version*
-                                       [:V0 :V1 :V2]))
-         (v/version-qualified
-           '*the-version* '(:V0 :V1 :V2)
-           '(+ (test-include 0)
-               (test-only :V1 1)
-               (test-only :V2 2)
-               (test-elide 3)))))
-  (is (= `(case ~'*the-version*
-            (:V0 :V3) ~'(+)
-            (:V1) ~'(+ 1 1)
-            (:V2) ~'(+ 2 2)
-            (v/version-qualified-error "*the-version*" ~'*the-version*
-                                       [:V0 :V1 :V2 :V3]))
-         (v/version-qualified
-           '*the-version* '(:V0 :V1 :V2 :V3)
-           '(+ (test-only :V1 1 1)
-               (test-only :V2 2 2)))))
-  (is (= `(case ~'*the-version*
-            (:V0) ~'{:key0 "value0"}
-            (:V1) ~'{:key1 "value1"}
-            (v/version-qualified-error "*the-version*" ~'*the-version*
-                                       [:V0 :V1]))
-         (v/version-qualified
-           '*the-version* '(:V0 :V1)
-           '{(test-only :V0 :key0) "value0"
-             :key1 (test-only :V1 "value1")}))))
+(deftest code-compaction
+  ;; When the body of code is large, having a large number of versions may
+  ;; produce method code too large exceptions. But versions which resolve to the
+  ;; same code should not need to duplicate the code, and thus shouldn't trigger
+  ;; the exception
+  (testing "Method code too large exceptions"
+    (let [versions (map (comp keyword str) (range 100))
+          body (concat `[+] (repeat 500 1) ['(test-only :0 1)])
+          generated (v/version-qualified 'version versions body)]
 
+      ;; 100 versions of a 500 argument function call should trigger a method
+      ;; code too large exception if the code is duplicated for each version.
+      ;; Assert that this doesn't happen
+      (is (= 501 (eval `(let [~'version :0] ~generated))))
+      (is (= 500 (eval `(let [~'version :1] ~generated))))))
 
+  (testing "Doesn't generate redundant code"
+    (let [num-occurrences (fn [form x]
+                            (let [occurrences (atom 0)]
+                              (clojure.walk/postwalk
+                                (fn [sub-form]
+                                  (when (= sub-form x)
+                                    (swap! occurrences inc))
+                                  sub-form)
+                                form)
+                              @occurrences))
+          versions (range 200)
+          body '[::before (test-after 100 ::after)]
+          generated (clojure.walk/macroexpand-all
+                     (v/version-qualified 'version versions body))]
+      (is (= 2 (num-occurrences generated ::before)))
+      (is (= 1 (num-occurrences generated ::after))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; Generative Tests ;;;;

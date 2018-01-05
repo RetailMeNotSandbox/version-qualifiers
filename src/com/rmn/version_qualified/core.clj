@@ -142,17 +142,33 @@
    specified by the binding of the version-symbol."
   [version-symbol versions-literal body]
   (let [process-qualifiers (partial process-qualifiers body)
-        version-code-pairs (->> (group-by process-qualifiers versions-literal)
-                                (mapcat (fn [[processed-code versions]]
-                                          [(apply list versions), processed-code])))]
-    (if (= 2 (count version-code-pairs))
-      (let [[vers, code] version-code-pairs]
-        code)
-      `(case ~version-symbol
-         ~@version-code-pairs
-         (version-qualified-error
-           ~(name version-symbol)
-           ~version-symbol
-           ;;  Unpacking versions-literal (below) prevents accidentally calling
-           ;;  versions-literal like a function
-           [~@versions-literal])))))
+        versions-to-code (->> (group-by process-qualifiers versions-literal)
+                              (map (fn [[processed-code versions]]
+                                     [versions processed-code]))
+                              (into {}))]
+    (if (= 1 (count versions-to-code))
+      (-> versions-to-code first val)
+      (let [;; we must "compact" versions which produce identical code into
+            ;; "groups" so that we can reduce the overall size of the generated
+            ;; case expression. Case seems like it would do this when you group
+            ;; test-constants together, but after macro expansion the
+            ;; result-exprs do, in fact, get duplicated.
+            ;; This can cause long compilation times in the benign case, and
+            ;; method code too large exceptions in the worst case.
+            version-to-group (->> versions-to-code
+                                  (mapcat (fn [[versions _]]
+                                            (let [version-ident (keyword (gensym))]
+                                              (map (fn [v] [v version-ident]) versions))))
+                                  (into {}))
+            group-to-code (->> versions-to-code
+                               (map (fn [[versions code]]
+                                      [(get version-to-group (first versions)) code]))
+                               (into {}))]
+        `(case (~version-to-group ~version-symbol)
+           ~@(mapcat identity group-to-code)
+           (version-qualified-error
+            ~(name version-symbol)
+            ~version-symbol
+            ;;  Unpacking versions-literal (below) prevents accidentally calling
+            ;;  versions-literal like a function
+            [~@versions-literal]))))))
