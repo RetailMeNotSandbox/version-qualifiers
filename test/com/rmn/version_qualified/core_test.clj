@@ -53,6 +53,35 @@
       (is (= 2 (num-occurrences generated ::before)))
       (is (= 1 (num-occurrences generated ::after))))))
 
+(deftest immediately-nested-qualifiers
+  (testing "deeply nested qualifiers"
+    (let [versions [1 2 3]
+          generated (v/version-qualified
+                     'version versions
+                     '[:0 (test-after 1
+                                      :1 (test-after 2
+                                                     :2 (test-elide
+                                                         (test-after -10000
+                                                                     :INVALID))))])]
+      (is (= [:0]       (eval `(let [~'version 1] ~generated))))
+      (is (= [:0 :1]    (eval `(let [~'version 2] ~generated))))
+      (is (= [:0 :1 :2] (eval `(let [~'version 3] ~generated))))))
+
+  (testing "looping limits"
+    (let [code '[(test-after 1 (test-after 1 (test-after 1 :resolved!)))]]  ;; takes 3 passes to resolve
+      (is (= []
+             (binding [v/*max-qualifier-eval-passes* 1]
+               (v/version-qualified 'version [0 1 #_2] code)))
+          "One pass should be enough since first qualifier removes everything (there are no versions after 1)")
+      (is (thrown? Exception
+                   (binding [v/*max-qualifier-eval-passes* 2]
+                     (v/version-qualified 'version [0 1 2] code)))
+          "Not enough allowed passes should throw an error")
+      (is (= [:resolved!]
+             (eval `(let [~'version 2]
+                     ~(binding [v/*max-qualifier-eval-passes* 3]
+                       (v/version-qualified 'version [0 1 2] code)))))))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; Generative Tests ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;

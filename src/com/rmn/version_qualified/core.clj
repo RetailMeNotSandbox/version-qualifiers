@@ -21,6 +21,11 @@
 
 
 
+(def ^:dynamic *max-qualifier-eval-passes*
+  "Qualifiers must be evaluated recursively, which introduces the possibility
+   of an infinite loop. This var caps the number of iterations."
+  10)
+
 (def ^:dynamic *version*
   "Specifies the \"current\" version that the verison-qualified function is
    processing. Non-trivial methods for eval-qualifier likely must use this."
@@ -105,10 +110,28 @@
   "Takes a version and (maybe) a version-qualified expression and returns the
    user-code specific for that version"
   [version form]
-  (if (qualifier? form)
-    (binding [*version* version]
-      (apply eval-qualifier form))
-    (list form)))
+  (binding [*version* version]
+    ;; We must eval every form recursively until nothing changes in order to
+    ;; deal with the case that a qualifier produces another qualifier.
+    ;; If we did not, apply-version would embed that generated qualifier into
+    ;; the code, which will likely produce an unknown symbol error at runtime.
+    (loop [forms (list form)
+           passes-left (inc *max-qualifier-eval-passes*)]  ;; increment by 1 because two passes is always required
+      (assert (pos? passes-left)
+              (throw (ex-info
+                      (format "*max-qualifier-eval-passes* (%d) limit exceeded"
+                              *max-qualifier-eval-passes*)
+                      {:original-form form
+                       :version version
+                       :current-form forms})))
+      (let [eval-form (fn [form]
+                        (if (qualifier? form)
+                          (apply eval-qualifier form)
+                          (list form)))
+            new-forms (mapcat eval-form forms)]
+        (if (= forms new-forms)
+          forms
+          (recur new-forms (dec passes-left)))))))
 
 (defn process-qualifiers
   "Takes a list of supported versions, a body and a version. Binds the supported
