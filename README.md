@@ -266,3 +266,30 @@ your macro. The dynamic variable `version->feature`is a mapping of version in
   :lowest-priority-feature EXPRn
   DEFAULT-EXPR)
 ```
+
+#### Arbitrary boolean expressions
+
+The feature qualifiers also support arbitrary boolean expressions rather than
+just single features:
+
+```clj
+;;; Given
+
+(def version-manifest
+  {:V0 #{:A}
+   :V1 #{:A :B}
+   :V2 #{   :B :C}})
+
+;;; Examples
+
+(feature (and :A :B) "only shows up for :V1")
+(feature (or :A :B :C) "shows up for every version")
+(feature (and :A (not :B)) "Only shows up for :V0")
+
+(feature-case
+  (:A :B :C) "shows up for every version"          ;; dont do this anymore
+  (or :A :B :C) "also shows up for every version"  ;; do this instead
+  (not :A) "only version :V2")
+
+; etc...
+```

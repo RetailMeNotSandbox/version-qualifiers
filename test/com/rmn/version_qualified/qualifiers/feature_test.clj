@@ -36,6 +36,38 @@
          :C "C"
          :D "D"))))
 
+(deftest boolean-expressions
+  (testing "feature qualifier"
+    (is (= {:V0 ["not b"]
+            :V1 []
+            :V2 []}
+         (utils/eval-qualified [:V0 :V1 :V2]
+           (versioned
+             [(feature (not :B) "not b")]))))
+    (is (= {:V0 ["always"]
+            :V1 ["always"]
+            :V2 ["always"]}
+         (utils/eval-qualified [:V0 :V1 :V2]
+           (versioned
+             [(feature (or :A :B :C) "always")])))))
+  (testing "feature-case qualifier"
+    (is (= {:V0 ["not b"]
+            :V1 ["b"]
+            :V2 ["b"]}
+         (utils/eval-qualified [:V0 :V1 :V2]
+           (versioned
+             [(feature-case
+               (not :B) "not b"
+               :B "b")]))))
+    (is (= {:V0 ["always"]
+            :V1 ["v1 only"]
+            :V2 ["always"]}
+         (utils/eval-qualified [:V0 :V1 :V2]
+           (versioned
+             [(feature-case
+               (and :A :B :C) "v1 only"
+               (or :A :B :C) "always")]))))))
+
 (deftest feature-case
   (testing "no default, all cases covered, and order matters"
     (is (= {:V0 "A"

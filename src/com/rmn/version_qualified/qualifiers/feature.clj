@@ -27,15 +27,39 @@
   (contains? (set (apply concat (vals *version->features*)))
              feature))
 
+(defn eval-feature-expr
+  [feature-expr]
+  (when (list? feature-expr)
+    (assert (not (known-feature? (first feature-expr)))
+            (format (str "feature expression '%s' is likely invalid: The first"
+                         " form in the list is a feature - did you want a"
+                         " logical operator instead?")
+                    feature-expr)))
+  (let [reified-expr
+        (clojure.walk/postwalk
+          (fn [form]
+            (if (known-feature? form)
+              (feature-active? form)
+              form))
+          feature-expr)
+        evaled-expr
+        (try (eval reified-expr)
+             (catch Exception e
+               (throw (ex-info
+                       "feature expression threw an error while being evaluated"
+                       {:expr feature-expr
+                        :reified-expr reified-expr
+                        :exception e}))))]
+    evaled-expr))
+
 
 ;; Feature Qualifier - "Part of feature X"
 ;; Takes a single feature and an arbitrary code form. The form
 ;; will only be included if the value behind *version* in *version-feature-manifest*
 ;; contains feature.
 (defmethod v/eval-qualifier 'feature
-  [_ feature & forms]
-  {:pre [(known-feature? feature)]}
-  (if (feature-active? feature)
+  [_ feature-expr & forms]
+  (if (eval-feature-expr feature-expr)
     forms
     (list ::v/delete)))
 
@@ -57,20 +81,24 @@
         default-form (if default-form-supplied?
                        (last flat-feature-form-pairs)
                        ::v/delete)
-        feature-form-pairs (partition 2 (if default-form-supplied?
-                                          (drop-last flat-feature-form-pairs)
-                                          flat-feature-form-pairs))
-        features (flatten (map first feature-form-pairs))
-        matching-forms (->> feature-form-pairs
-                            (filter (fn [[feature form]]
-                                      ;; Clojure's case expression handles a list of conditions
-                                      (if (list? feature)
-                                        (some feature-active? feature) ;; Clojure's case it behaves as an OR expression (some) not an AND expresssion (every?)
-                                        (feature-active? feature))))
-                            (map (fn [[feature form]] form)))]
-    (assert (every? known-feature? features)
-            (str "Unknown features provided to feature-case expression: "
-                 (clojure.string/join "; " (filter (complement known-feature?) features))))
+        expr-form-pairs (partition 2 (if default-form-supplied?
+                                       (drop-last flat-feature-form-pairs)
+                                       flat-feature-form-pairs))
+        matching-forms
+        (->> expr-form-pairs
+             (filter
+              (fn [[case-expr form]]
+                (eval-feature-expr
+                 (if (and (list? case-expr)
+                          (every? known-feature? case-expr))
+                  (let [new-case-expr (conj case-expr 'or)]
+                    (println
+                     (format "Form '%s' is deprecated - please change to '%s'"
+                             case-expr
+                             new-case-expr))
+                    new-case-expr)
+                  case-expr))))
+             (map (fn [[feature form]] form)))]
     ;; note that the first form may be false or nil, so we must check the
     ;; length of matching-forms, not simply the result of (first matching-forms)
     (if (seq matching-forms)
