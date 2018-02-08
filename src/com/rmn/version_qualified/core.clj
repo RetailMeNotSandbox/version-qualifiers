@@ -44,11 +44,11 @@
        (contains? (methods eval-qualifier) (first form))))
 
 (defn apply-version
-  "Walks an arbitrary data-structure (such as code) and transforms it using the
-   process-form visitor function. The visitor must return a list of forms to
-   replace the input form with. The visitor may return '(::delete), in which
-   case this function will entirely remove that expression from a map, a
-   vector, or a list (or collection). Returns the modified data-structure"
+  "Walks an arbitrary code form and transforms it using the process-form
+   visitor function. The visitor must return a list of forms to replace the
+   input form with. The visitor may return '(::delete), in which case this
+   function will entirely remove that expression from a map, a vector, a list,
+   or a set."
   [process-form* data version]
   (let [delete? (partial = ::delete)
         process-form (partial process-form* version)
@@ -94,11 +94,17 @@
             (->> (mapcat process-form form)
                  (remove delete?)
                  (into []))
-          (coll? form)
+          (list? form)
             (->> (mapcat process-form form)
                  (remove delete?)
                  (apply list))
-          :else form))
+          (set? form)
+            (->> (mapcat process-form form)
+                 (remove delete?)
+                 (set))
+          ;; - Other collection types don't support version qualifiers
+          :else
+            form))
       data)))
 
 (defn process-form-for-version

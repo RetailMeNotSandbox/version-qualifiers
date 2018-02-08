@@ -20,6 +20,7 @@
     body
     '(::v/delete)))
 
+
 (deftest code-compaction
   ;; When the body of code is large, having a large number of versions may
   ;; produce method code too large exceptions. But versions which resolve to the
@@ -27,7 +28,8 @@
   ;; the exception
   (testing "Method code too large exceptions"
     (let [versions (map (comp keyword str) (range 100))
-          body (concat `[+] (repeat 500 1) ['(test-only :0 1)])
+          body (->> (concat `[+] (repeat 500 1) ['(test-only :0 1)])
+                    (apply list))
           generated (v/version-qualified 'version versions body)]
 
       ;; 100 versions of a 500 argument function call should trigger a method
@@ -58,19 +60,19 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-(def small (partial gen/scale #(Math/sqrt %)))
+(def small (partial gen/scale #(int (Math/sqrt %))))
 
 (def gen-any
   (gen/recursive-gen
     gen/container-type
     (gen/one-of
       [gen/int gen/large-integer (gen/double* {:NaN? false})
-       (small gen/char-ascii) (small gen/string-ascii) gen/ratio gen/boolean
-       (small gen/keyword) (small gen/keyword-ns) (small gen/symbol)
-       (small gen/symbol-ns) (small gen/uuid)])))
+       gen/char-ascii gen/string-ascii gen/ratio gen/boolean
+       gen/keyword gen/keyword-ns (small gen/symbol)
+       gen/symbol-ns gen/uuid])))
 
 (def gen-symbol
-  (gen/one-of [(small gen/symbol) (gen/elements (keys (ns-publics 'clojure.core)))]))
+  (gen/one-of [gen/symbol (gen/elements (keys (ns-publics 'clojure.core)))]))
 
 (defn gen-call
   [symbol-gen]
@@ -88,9 +90,13 @@
 ;; numbers as the first element of the list, but that should be OK
 (defn gen-code
   [expr-gen]
-  (gen/one-of [(gen/recursive-gen gen/list expr-gen)
-               (gen/recursive-gen gen/vector expr-gen)
-               #_(gen/recursive-gen gen/map expr-gen expr-gen)]))
+  (gen/recursive-gen
+   (fn [inner]
+     (gen/one-of [(gen/vector inner)
+                  (gen/list inner)
+                  (gen/map inner inner)
+                  (gen/set inner)]))
+   expr-gen))
 
 (def gen-unqualified-code
   (gen-code (gen-expr (gen-call gen-symbol))))
@@ -116,19 +122,19 @@
 
 
 (deftest version-qualified-optimizations
-  (checking "non-qualified expressions compile to themselves" 25
+  (checking "non-qualified expressions compile to themselves" 101
     [version-symbol gen-symbol
      versions-literal gen-versions
-     body gen-unqualified-code]
+     body (small gen-unqualified-code)]
     (is (= (v/version-qualified version-symbol versions-literal body)
            body)))
-  (checking "qualified expressions with only one version compile to that version" 25
+  (checking "qualified expressions with only one version compile to that version" 100
     [version-symbol gen-symbol
      versions-literal gen-versions
      version (gen/elements versions-literal)
-     body (gen-qualified-code
-            ;; 'test-elide produces the same code for every version
-            gen-elide-qualified)]
+     body (small (gen-qualified-code
+                   ;; 'test-elide produces the same code for every version
+                   gen-elide-qualified))]
     (let [processed (v/version-qualified version-symbol versions-literal body)]
       (is (= processed
              (v/process-qualifiers body version)))
