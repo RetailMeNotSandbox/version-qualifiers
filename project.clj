@@ -1,4 +1,4 @@
-(defproject com.rmn/version-qualified "1.0.2-SNAPSHOT"
+(defproject com.rmn/version-qualified "1.0.2"
   :description "A library for generating version-specific code"
   :license {:name "MIT License"
             :url "http://www.opensource.org/licenses/mit-license.php"}
